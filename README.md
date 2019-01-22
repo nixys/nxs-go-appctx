@@ -8,7 +8,7 @@ This Go package provides tools to make Go applications context. You can write ap
 Most applications consist of goroutines that implements program functionality and context data that contains data used at runtime; i.e. database credentials, API settings, etc. `Nxs-go-appctx` allows control of the derived goroutines and keep context data up-to-date via following context actions:
   - *Init*: sets context settings, loads data from config file, creates log and pid files, if necessary
   - *Reload*: reloads config file and updates application context data
-  - *Terminate*: frees context data and terminates the aplliaction
+  - *Terminate*: frees context data and terminates the application
 
 - **Logging**  
 `Nxs-go-appctx` uses the [logrus](https://github.com/sirupsen/logrus) logger created at the *init* stage and is available in application at runtime. In accordance with context settings, log file can be changed after context reload.
