@@ -1,10 +1,7 @@
 package main
 
 import (
-	"os"
-
 	"github.com/nixys/nxs-go-appctx"
-	"github.com/sirupsen/logrus"
 )
 
 func contextInit(ctx interface{}, cfgPath string) (appctx.CfgData, error) {
@@ -29,20 +26,16 @@ func contextInit(ctx interface{}, cfgPath string) (appctx.CfgData, error) {
 	return cfgData, nil
 }
 
-func contextReload(ctx interface{}, cfgPath string, singnal os.Signal) (appctx.CfgData, error) {
+func contextReload(ctx interface{}, cfgPath string) (appctx.CfgData, error) {
 
-	log.WithFields(logrus.Fields{
-		"signal": singnal,
-	}).Debug("program reload")
+	log.Debug("reloading context")
 
 	return contextInit(ctx, cfgPath)
 }
 
-func contextFree(ctx interface{}, signal os.Signal) int {
+func contextFree(ctx interface{}) int {
 
-	log.WithFields(logrus.Fields{
-		"signal": signal,
-	}).Debug("got termination signal")
+	log.Debug("freeing context")
 
 	return 0
 }

@@ -27,7 +27,7 @@ If the *logrotate signals* is set, every time they are sent to the application t
 
 ## Getting started
 
-For better understanding the `nxs-go-appctx` description will be provided with the sample gists. You can find the complete code example in the `example/` directory. Also see the [Example of usage](#example-of-usage) section for more information.
+For better understanding the `nxs-go-appctx` description will be provided with the sample gists. You can find the complete code example in the [example/](https://github.com/nixys/nxs-go-appctx/tree/master/example) directory. Also see the [Example of usage](#example-of-usage) section for more information.
 
 ### Setup nxs-go-appctx
 
@@ -80,24 +80,20 @@ This function must read the config file (e.g. with [nxs-go-conf](https://github.
 - **Context reload function**  
 This function can read config file and change the application context with new data. It also must fill and return the `appctx.CfgData` struct. Usually this function almost the same as `contextInit`:
   ```go
-  func contextReload(ctx interface{}, cfgPath string, singnal os.Signal) (appctx.CfgData, error) {
+  func contextReload(ctx interface{}, cfgPath string) (appctx.CfgData, error) {
   
-  	log.WithFields(logrus.Fields{
-  		"signal": singnal,
-  	}).Debug("program reload")
+  	log.Debug("reloading context")
   
   	return contextInit(ctx, cfgPath)
   }
   ```
 
 - **Context free function**
-This function must clean up the application context if necessary (i.e. database disconnect, etc.) and return the program exit status. In the simle case it can looks like this:
+This function must clean up the application context if necessary (i.e. database disconnect, etc.) and return the program exit status. In the simple case it can looks like this:
   ```go
-  func contextFree(ctx interface{}, signal os.Signal) int {
+  func contextFree(ctx interface{}) int {
   
-  	log.WithFields(logrus.Fields{
-  		"signal": signal,
-  	}).Debug("got termination signal")
+  	log.Debug("freeing context")
   
   	return 0
   }
@@ -151,25 +147,35 @@ Add a new goroutine element into `appctx`. This action creates a `context reload
 crc := appCtx.RoutineAdd(cf)
 ```
 
+To catch the goroutine statuses (when it's done or failed) at main(), you can make the channel, e.g.:
+```go
+// Channel to notify main() when goroutine done
+grChan := make(chan int)
+```
+
 ### Goroutines
 
 After goroutine element is added into `appctx` you can start the new goroutine. Note that all goroutines created using `RoutineAdd()` must call `RoutineDone()` when completed:
 ```go
 defer appCtx.RoutineDone(crc)
-runtime(cRuntime, ctx, crc)
+runtime(cRuntime, ctx, crc, grChan)
 ```
 
 Within the goroutines you should process at least the following channels:
 - `context done channel`, to receive notification when program terminates
 - `context reload channel`, to receive new application context data
 
+Also, recommended notify the main() via channel when goroutine completed.
+
 Optionally, you can process other channels in accordance with your application algorithm.
 
 Goroutine `runtime` function may look like this:
 ```go
-func runtime(cRuntime context.Context, ctx selfContext, crc chan interface{}) {
+func runtime(cRuntime context.Context, ctx selfContext, crc chan interface{}, grChan chan int) {
 
 	timer := time.NewTimer(time.Duration(ctx.timeInterval) * time.Second)
+
+	i := 0
 
 	for {
 		select {
@@ -179,8 +185,16 @@ func runtime(cRuntime context.Context, ctx selfContext, crc chan interface{}) {
 				"time interval": ctx.timeInterval,
 			}).Info("Time to work!")
 			timer.Reset(time.Duration(ctx.timeInterval) * time.Second)
+
+			if i > 3 {
+				// Goroutine done
+				log.Debug("goroutine done")
+				grChan <- 0
+				return
+			}
+			i++
 		case <-cRuntime.Done():
-			// Terminate the program.
+			// Program termination.
 			// Write "Done" to log and complete the current goroutine.
 			log.Info("Done")
 			return
@@ -215,6 +229,42 @@ To correctly terminate the program, the main() function should perform the follo
   os.Exit(ec)
   ```
 
+If the main() waits and process the derived goroutine statuses, it can initiate program terminate by the following function call:
+```go
+appCtx.ContextTerminate(status)
+```
+After this function is called and exit status is sent, the `appctx` will notified all derived goroutines to terminate, freed application context and return exit status back to main() by the `appCtx.ExitWait()`.
+
+The complete code of this stage may look similar like this:
+```go
+for {
+  select {
+
+  // Wait for program termination
+  case ec := <-appCtx.ExitWait():
+
+    log.WithFields(logrus.Fields{
+      "exit code": ec,
+    }).Info("program terminating")
+
+    // Done the appctx
+    appCtx.ContextDone()
+
+    // Exit from program with `ec` status
+    os.Exit(ec)
+
+  // Wait for goroutine is done
+  case s := <-grChan:
+
+    log.WithFields(logrus.Fields{
+      "goroutine exit code": s,
+    }).Info("goroutine done")
+    
+    appCtx.ContextTerminate(0)
+  }
+}
+```
+
 ## Install
 
 ```
@@ -223,7 +273,7 @@ go get github.com/nixys/nxs-go-appctx
 
 ## Example of usage
 
-The `example` program:
+The `example` program (see [example/](https://github.com/nixys/nxs-go-appctx/tree/master/example) directory):
 
 - Use the following config file:
   ```yaml
@@ -245,24 +295,19 @@ The `example` program:
 
 After starting the program you will see in the log file similar like this:
 ```
-[2019-01-22T08:18:53+07:00] INFO: Time to work! (time interval: 3)
-[2019-01-22T08:18:54+07:00] INFO: Time to work! [2] (time interval: 4)
-[2019-01-22T08:18:56+07:00] INFO: Time to work! (time interval: 3)
-[2019-01-22T08:18:58+07:00] INFO: Time to work! [2] (time interval: 4)
-[2019-01-22T08:18:59+07:00] INFO: Time to work! (time interval: 3)
-[2019-01-22T08:19:02+07:00] INFO: Time to work! [2] (time interval: 4)
-[2019-01-22T08:19:02+07:00] INFO: Time to work! (time interval: 3)
-[2019-01-22T08:19:05+07:00] INFO: Time to work! (time interval: 3)
-[2019-01-22T08:19:06+07:00] INFO: Time to work! [2] (time interval: 4)
-[2019-01-22T08:19:08+07:00] INFO: Time to work! (time interval: 3)
-[2019-01-22T08:19:10+07:00] INFO: Time to work! [2] (time interval: 4)
-[2019-01-22T08:19:11+07:00] INFO: Time to work! (time interval: 3)
-[2019-01-22T08:19:14+07:00] INFO: Time to work! [2] (time interval: 4)
-[2019-01-22T08:19:14+07:00] INFO: Time to work! (time interval: 3)
-[2019-01-22T08:19:15+07:00] INFO: Done [2]
-[2019-01-22T08:19:15+07:00] INFO: Done
-[2019-01-22T08:19:15+07:00] DEBUG: got termination signal (signal: terminated)
-[2019-01-22T08:19:15+07:00] INFO: program terminating (exit code: 0)
+[2019-01-24T05:02:30+07:00] INFO: Time to work! (time interval: 3)
+[2019-01-24T05:02:31+07:00] INFO: Time to work! [2] (time interval: 4)
+[2019-01-24T05:02:33+07:00] INFO: Time to work! (time interval: 3)
+[2019-01-24T05:02:35+07:00] INFO: Time to work! [2] (time interval: 4)
+[2019-01-24T05:02:36+07:00] INFO: Time to work! (time interval: 3)
+[2019-01-24T05:02:39+07:00] INFO: Time to work! [2] (time interval: 4)
+[2019-01-24T05:02:39+07:00] INFO: Time to work! (time interval: 3)
+[2019-01-24T05:02:42+07:00] INFO: Time to work! (time interval: 3)
+[2019-01-24T05:02:42+07:00] DEBUG: goroutine done
+[2019-01-24T05:02:42+07:00] INFO: goroutine done (goroutine exit code: 0)
+[2019-01-24T05:02:42+07:00] INFO: Done [2]
+[2019-01-24T05:02:42+07:00] DEBUG: freeing context
+[2019-01-24T05:02:42+07:00] INFO: program terminating (exit code: 0)
 ```
 
 Then you can play with the config file. After the config file change send the `SIGHUP` to the application with the following command:

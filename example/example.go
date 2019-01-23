@@ -44,20 +44,37 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Channel to notify main() when goroutine done
+	grChan := make(chan int)
+
 	defer func() {
 
-		// Wait for program termination
-		ec := appCtx.ExitWait()
+		for {
+			select {
 
-		log.WithFields(logrus.Fields{
-			"exit code": ec,
-		}).Info("program terminating")
+			// Wait for program termination
+			case ec := <-appCtx.ExitWait():
 
-		// Done the appctx
-		appCtx.ContextDone()
+				log.WithFields(logrus.Fields{
+					"exit code": ec,
+				}).Info("program terminating")
 
-		// Exit from program with `ec` status
-		os.Exit(ec)
+				// Done the appctx
+				appCtx.ContextDone()
+
+				// Exit from program with `ec` status
+				os.Exit(ec)
+
+			// Wait for goroutine is done
+			case s := <-grChan:
+
+				log.WithFields(logrus.Fields{
+					"goroutine exit code": s,
+				}).Info("goroutine done")
+
+				appCtx.ContextTerminate(0)
+			}
+		}
 	}()
 
 	// Create main context
@@ -75,7 +92,7 @@ func main() {
 
 	go func() {
 		defer appCtx.RoutineDone(crc)
-		runtime(cRuntime, ctx, crc)
+		runtime(cRuntime, ctx, crc, grChan)
 	}()
 
 	go func() {
@@ -84,9 +101,11 @@ func main() {
 	}()
 }
 
-func runtime(cRuntime context.Context, ctx selfContext, crc chan interface{}) {
+func runtime(cRuntime context.Context, ctx selfContext, crc chan interface{}, grChan chan int) {
 
 	timer := time.NewTimer(time.Duration(ctx.timeInterval) * time.Second)
+
+	i := 0
 
 	for {
 		select {
@@ -96,8 +115,16 @@ func runtime(cRuntime context.Context, ctx selfContext, crc chan interface{}) {
 				"time interval": ctx.timeInterval,
 			}).Info("Time to work!")
 			timer.Reset(time.Duration(ctx.timeInterval) * time.Second)
+
+			if i > 3 {
+				// Goroutine done
+				log.Debug("goroutine done")
+				grChan <- 0
+				return
+			}
+			i++
 		case <-cRuntime.Done():
-			// Termination the program.
+			// Program termination.
 			// Write "Done" to log and complete the current goroutine.
 			log.Info("Done")
 			return
@@ -123,7 +150,7 @@ func runtime2(cRuntime context.Context, ctx selfContext, crc chan interface{}) {
 			}).Info("Time to work! [2]")
 			timer.Reset(time.Duration(ctx.timeInterval+1) * time.Second)
 		case <-cRuntime.Done():
-			// Termination the program.
+			// Program termination.
 			// Write "Done" to log and complete the current goroutine.
 			log.Info("Done [2]")
 			return

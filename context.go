@@ -9,14 +9,22 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	chanToMain   = 0
+	chanFromMain = 1
+
+	exitStatusSuccess = 0
+	exitStatusFailure = 1
+)
+
 // ContextInit it is a function type that will be called on application context init
 type ContextInit func(ctx interface{}, cfgPath string) (CfgData, error)
 
 // ContextFree it is a function type that will be called on application context free
-type ContextFree func(ctx interface{}, singnal os.Signal) int
+type ContextFree func(ctx interface{}) int
 
 // ContextReload it is a function type that will be called on application context reload
-type ContextReload func(ctx interface{}, cfgPath string, singnal os.Signal) (CfgData, error)
+type ContextReload func(ctx interface{}, cfgPath string) (CfgData, error)
 
 // AppContext contains the dataset to create appctx context
 type AppContext struct {
@@ -48,18 +56,12 @@ type AppContext struct {
 	// cfgData contains
 	cfgData CfgData
 
-	// termChan is a channel to send main function exit code
-	termChan chan int
+	// termChan is a channels array to send exit codes from appctx to main()
+	// and vice versa
+	termChan [2]chan int
 
 	// wg is a wait group for application runtime goroutines
 	wg sync.WaitGroup
-
-	// cfs it's a slice of top level `context` cancel functions
-	// which will be called when program termination in function `contextFree()`
-	//cfs []context.CancelFunc
-
-	// crChan is a `context reload channels` which used to send to receivers via specified channels new context.
-	//crChan []chan interface{}
 
 	routines   []routineElt
 	routinesMu sync.Mutex
@@ -113,7 +115,11 @@ func (c *AppContext) ContextInit() (*logrus.Logger, error) {
 		return nil, err
 	}
 
-	c.termChan = make(chan int)
+	// from appctx to main
+	c.termChan[chanToMain] = make(chan int)
+
+	// from main to appctx
+	c.termChan[chanFromMain] = make(chan int)
 
 	// Set context reload signals processing
 	c.setReloadSignals()
@@ -127,11 +133,28 @@ func (c *AppContext) ContextInit() (*logrus.Logger, error) {
 }
 
 // ContextDone completes the appctx.
-// This method must be called before main() function Exit to complete write operations at the log file.
+// This method must be called before main() function Exit to complete write operations (e.g. log file)
+// and close channes.
 func (c *AppContext) ContextDone() {
 
 	// Close log file
 	LogfileClose(c.log)
+
+	// Close the channels
+	close(c.termChan[chanToMain])
+	close(c.termChan[chanFromMain])
+}
+
+// ContextTerminate generates the termination signal
+//
+// This function must ba called from main() to initiate the context free
+// and program termination (e.g. after one of the goroutines done or failed).
+//
+// After this function is called and exit status sent, the appctx will
+// notified all derived goroutines to terminate, freed application context and return
+// exit status back to main() via termChan[chanToMain].
+func (c *AppContext) ContextTerminate(status int) {
+	c.termChan[chanFromMain] <- status
 }
 
 // RoutineAdd adds a new routine element into appctx.
@@ -162,6 +185,7 @@ func (c *AppContext) RoutineDone(crc chan interface{}) {
 
 	for i, e := range c.routines {
 		if e.crc == crc {
+			close(e.crc)
 			c.routines = append(c.routines[:i], c.routines[i+1:]...)
 		}
 	}
@@ -170,12 +194,13 @@ func (c *AppContext) RoutineDone(crc chan interface{}) {
 }
 
 // ExitWait waits the exit code
-// This function must be called in main function to notified program termination
-func (c *AppContext) ExitWait() int {
-	return <-c.termChan
+// This function must be called in main() to notified program termination
+func (c *AppContext) ExitWait() chan int {
+	return c.termChan[chanToMain]
 }
 
-// setTermSignals sets the application termination signals processing
+// setTermSignals sets the application termination signals processing.
+// Also it waits the exit status from main()
 func (c *AppContext) setTermSignals() {
 
 	// Termination signals processing
@@ -183,8 +208,16 @@ func (c *AppContext) setTermSignals() {
 
 	go func() {
 		signal.Notify(sigChan, c.TermSignals...)
-		for s := range sigChan {
-			c.terminate(true, s)
+		for {
+			select {
+			case s := <-sigChan:
+				c.log.WithFields(logrus.Fields{
+					"signal": s,
+				}).Debug("got terminating signal")
+				c.terminate(exitStatusSuccess)
+			case s := <-c.termChan[chanFromMain]:
+				c.terminate(s)
+			}
 		}
 	}()
 }
@@ -199,13 +232,17 @@ func (c *AppContext) setReloadSignals() {
 		signal.Notify(sigChan, c.ReloadSignals...)
 		for s := range sigChan {
 
+			c.log.WithFields(logrus.Fields{
+				"signal": s,
+			}).Debug("got reloading signal")
+
 			if c.CtxReload == nil {
 				continue
 			}
 
-			d, err := c.CtxReload(c.AppCtx, c.CfgPath, s)
+			d, err := c.CtxReload(c.AppCtx, c.CfgPath)
 			if err != nil {
-				c.terminate(false, s)
+				c.terminate(exitStatusFailure)
 				continue
 			}
 
@@ -221,7 +258,7 @@ func (c *AppContext) setReloadSignals() {
 
 				if err = LogfileChange(c.log, c.cfgData.LogFile, c.cfgData.LogLevel, c.LogrotateSignals); err != nil {
 					c.log.Errorf("context reload error: %v", err)
-					c.terminate(false, s)
+					c.terminate(exitStatusFailure)
 					continue
 				}
 			} else {
@@ -233,7 +270,7 @@ func (c *AppContext) setReloadSignals() {
 					level, err := logrus.ParseLevel(c.cfgData.LogLevel)
 					if err != nil {
 						c.log.Errorf("context reload error: wrong loglevel value: %s", c.cfgData.LogLevel)
-						c.terminate(false, s)
+						c.terminate(exitStatusFailure)
 						continue
 					}
 					c.log.SetLevel(level)
@@ -242,7 +279,7 @@ func (c *AppContext) setReloadSignals() {
 
 			if err := PidfileChange(o.PidFile, c.cfgData.PidFile); err != nil {
 				c.log.Errorf("context reload error: %v", err)
-				c.terminate(false, s)
+				c.terminate(exitStatusFailure)
 				continue
 			}
 
@@ -255,7 +292,7 @@ func (c *AppContext) setReloadSignals() {
 }
 
 // Application termination
-func (c *AppContext) terminate(isSucess bool, singnal os.Signal) {
+func (c *AppContext) terminate(status int) {
 
 	var es int
 
@@ -268,19 +305,19 @@ func (c *AppContext) terminate(isSucess bool, singnal os.Signal) {
 	c.wg.Wait()
 
 	if c.CtxFree != nil {
-		es = c.CtxFree(c.AppCtx, singnal)
+		es = c.CtxFree(c.AppCtx)
 	} else {
 		es = 0
 	}
 
-	// On failure exit status can't be `0`
-	if isSucess == false && es == 0 {
-		es = 1
+	// If desired status is set
+	if status != 0 {
+		es = status
 	}
 
 	// Remove pid file if necessary
 	PidfileRemove(c.cfgData.PidFile)
 
 	// Notify main function with exit code
-	c.termChan <- es
+	c.termChan[chanToMain] <- es
 }
