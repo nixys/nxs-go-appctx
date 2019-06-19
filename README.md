@@ -27,7 +27,7 @@ If the *logrotate signals* is set, every time they are sent to the application t
 
 ## Getting started
 
-For better understanding the `nxs-go-appctx` description will be provided with the sample gists. You can find the complete code example in the [example/](https://github.com/nixys/nxs-go-appctx/tree/master/example) directory. Also see the [Example of usage](#example-of-usage) section for more information.
+For better understanding the `nxs-go-appctx` description will be provided with the sample gists. You can find the complete code examples in the [examples/](https://github.com/nixys/nxs-go-appctx/tree/master/examples) directory. Also see the [Example of usage](#example-of-usage) section for more information.
 
 ### Setup nxs-go-appctx
 
@@ -273,7 +273,7 @@ go get github.com/nixys/nxs-go-appctx
 
 ## Example of usage
 
-The `example` program (see [example/](https://github.com/nixys/nxs-go-appctx/tree/master/example) directory):
+The `example` program (see [examples/](https://github.com/nixys/nxs-go-appctx/tree/master/examples) directory):
 
 - Use the following config file:
   ```yaml
