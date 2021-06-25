@@ -24,7 +24,7 @@ If the *logrotate signals* is set, every time application will receive specified
 
 ## Getting started
 
-For better understanding the `nxs-go-appctx` you can find the complete code examples in the [examples/](https://github.com/nixys/nxs-go-appctx/tree/master/examples) directory.
+For better understanding the `nxs-go-appctx` see the example in [nxs-go-appctx-example-restapi/](https://github.com/nixys/nxs-go-appctx-example-restapi).
 
 ### Setup nxs-go-appctx
 
@@ -120,4 +120,4 @@ go get github.com/nixys/nxs-go-appctx/v2
 
 ## Example of usage
 
-See the `examples/` directory.
+See [nxs-go-appctx-example-restapi/](https://github.com/nixys/nxs-go-appctx-example-restapi).
