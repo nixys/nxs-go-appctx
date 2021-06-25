@@ -1,4 +1,4 @@
-module github.com/nixys/nxs-go-appctx
+module github.com/nixys/nxs-go-appctx/v2
 
 go 1.14
 
