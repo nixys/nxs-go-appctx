@@ -1,322 +1,123 @@
 # nxs-go-appctx
 
-This Go package provides tools to make Go applications context. You can write application code instead of system kits to allow your daemons work fine. 
+This Go package provides a tools to make Go applications context. With the `nxs-go-appctx` you may focus on your application logic instead of write an extensive and difficult system kits to allow your daemons work fine. `Nxs-go-appctx` designed to simplify create REST API applications.
 
 ## Features
 
 - **Application context control**  
-Most applications consist of goroutines that implements program functionality and context data that contains data used at runtime; i.e. database credentials, API settings, etc. `Nxs-go-appctx` allows control of the derived goroutines and keep context data up-to-date via following context actions:
-  - *Init*: sets context settings, loads data from config file, creates log and pid files, if necessary
-  - *Reload*: reloads config file and updates application context data
-  - *Terminate*: frees context data and terminates the application
+Most applications consist of goroutines that implements program functionality and context that contains a data (e.g. config option, database connections, etc) used at runtime. `Nxs-go-appctx` allows to control of the derived goroutines and keep context data up-to-dated over an application runtime.
 
 - **Logging**  
-`Nxs-go-appctx` uses the [logrus](https://github.com/sirupsen/logrus) logger created at the *init* stage and is available in application at runtime. In accordance with context settings, log file can be changed after context reload.
+`Nxs-go-appctx` uses the [logrus](https://github.com/sirupsen/logrus) logger created at the *init* stage and it's available in application at runtime. In accordance with context settings, log file can be changed after context reload. Also you may choose log format you wish.
 
 - **Pid files**  
 If the *pid file* path is set, the pid file with the program PID will be automatically created at the *init* and removed at the *terminate* stage. In accordance with context settings, pid file can be changed after context reload.
 
 - **Reload signals**  
-If the *reload signals* is set, every time they are sent to the application, its context data will be updated in accordance with `ContextReload` function.
+If the *reload signals* is set, every time application will receive specified signals, context data will be updated in accordance with *custom context* `Reload()` function.
 
 - **Termination signals**  
-If the *terminate signals* is set, every time they are sent to the application, its context data will be freed in accordance with `ContextFree` function and the application itself will be terminated.
+If the *terminate signals* is set, every time application will receive specified signals, context data will be freed in accordance with  *custom context*`Free()` function and the application itself will be terminated.
 
 - **Logrotate signals**  
-If the *logrotate signals* is set, every time they are sent to the application the log file will be reopened. It is useful for `logrotate` utility.
+If the *logrotate signals* is set, every time application will receive specified signals the log file will be reopened. It is useful for `logrotate` utility.
 
 ## Getting started
 
-For better understanding the `nxs-go-appctx` description will be provided with the sample gists. You can find the complete code examples in the [examples/](https://github.com/nixys/nxs-go-appctx/tree/master/examples) directory. Also see the [Example of usage](#example-of-usage) section for more information.
+For better understanding the `nxs-go-appctx` see the example in [nxs-go-appctx-example-restapi](https://github.com/nixys/nxs-go-appctx-example-restapi).
 
 ### Setup nxs-go-appctx
 
-At first, you need to define the struct that contains an application context data:
+Application that uses the `nxs-go-appctx` generally has structure described below.
 
-```go
-type selfContext struct {
-    timeInterval int
-}
-```
+![Nixys Application Context structure](docs/images/nxs-go-appctx.png)
 
-Next, declare the variables:
-- Context variable `ctx` as type `selfContext` in main() function
-  ```go
-  var ctx selfContext
-  ```
-- Logger variable `log` as type `*logrus.Logger`. For convenience it could be global variable:
-  ```go
-  var log *logrus.Logger
-  ```
+**Main**
 
-Create three functions to manage application context:
+It's a root of the application repository. Besides a codebase helper files this directory consist of:
 
-- **Context init function** 
-This function must read the config file (e.g. with [nxs-go-conf](https://github.com/nixys/nxs-go-conf)), set the application context data and return the `appctx.CfgData` struct:
-  ```go
-  func contextInit(ctx interface{}, cfgPath string) (appctx.CfgData, error) {
-  
-  	var cfgData appctx.CfgData
-  
-  	// Read config file
-  	conf, err := confRead(cfgPath)
-  	if err != nil {
-  		return cfgData, err
-  	}
-  
-  	// Set application context
-  	c := ctx.(*selfContext)
-  	c.timeInterval = conf.TimeInterval
-  
-  	// Fill `appctx.CfgData`
-  	cfgData.LogFile = conf.LogFile
-  	cfgData.LogLevel = conf.LogLevel
-  	cfgData.PidFile = conf.PidFile
-  
-  	return cfgData, nil
-  }
-  ```
+- `main.go`: may contains only a `main()` with call an `appctx.ContextInit()` function to create an *application context* (`appctx`) with necessary settings and one or more `appCtx.RoutineCreate()` calls to add *application routines*.
 
-- **Context reload function**  
-This function can read config file and change the application context with new data. It also must fill and return the `appctx.CfgData` struct. Usually this function almost the same as `contextInit`:
-  ```go
-  func contextReload(ctx interface{}, cfgPath string) (appctx.CfgData, error) {
-  
-  	log.Debug("reloading context")
-  
-  	return contextInit(ctx, cfgPath)
-  }
-  ```
+To work fine with `appctx` the `main()` must be able to process at least two channels:
+- `ac.ExitWait()`: channel tells when an `appctx` is freed and application may be terminated. Usually it happens in following cases:
+  - Function `appCtx.ContextTerminate()` called from any part of application
+  - Application got the termination signal from system (e.g. `SIGTERM`)
+  - Application context `appctx` encountered with an error while processing reload signal (e.g. `SIGHUP`) 
 
-- **Context free function**
-This function must clean up the application context if necessary (i.e. database disconnect, etc.) and return the program exit status. In the simple case it can looks like this:
-  ```go
-  func contextFree(ctx interface{}) int {
-  
-  	log.Debug("freeing context")
-  
-  	return 0
-  }
-  ```
+If you haven't a specific logic to process described channels you may use `defer appCtx.MainBodyGeneric()` in `main()`.
 
-Then declare and initialize the `appCtx` variable with `appctx` settings in main() function:
-```go
-appCtx := appctx.AppContext{
-    AppCtx:           &ctx,
-    CfgPath:          configPath,
-    CtxInit:          contextInit,
-    CtxReload:        contextReload,
-    CtxFree:          contextFree,
-    TermSignals:      []os.Signal{syscall.SIGTERM, syscall.SIGINT},
-    ReloadSignals:    []os.Signal{syscall.SIGHUP},
-    LogrotateSignals: []os.Signal{syscall.SIGUSR1},
-}
-```
+**Ctx**
 
-The fields description is as follows:
-- `AppCtx`: context application data pointer
-- `CfgPath`: config file path
-- `CtxInit`: context init function
-- `CtxReload`: context reload function
-- `CtxFree`: context free function
-- `TermSignals`: termination signals array
-- `ReloadSignals`: reload signals array
-- `LogrotateSignals`: logrotate signals array
+*Custom context* it is a structure stores all data (such as config options, database connections, etc) used through the application. *Custom context* and all of its components describe in `ctx/` directory:
 
-After the `appCtx` variable declaration call the `appCtx.ContextInit()` function. It will set the application context, create log and pid files and return the logger:
-```go
-log, err = appCtx.ContextInit()
-if err != nil {
-    fmt.Println(err)
-    os.Exit(1)
-}
-```
+- `ctx/args.go`: defines a function for processing command line arguments, `Args` struct to store read values and one or more helper functions.
+- `ctx/conf.go`: defines a function for processing config file, structure (may consist with some nested structures) to store read values from config file and one or more helper functions. It's useful to use [nxs-go-conf](https://github.com/nixys/nxs-go-conf) package to work with config files.
+- `ctx/context.go`: defines the *custom context* struct and its three methods:
+  - `Init()`: initiates application *custom context*. This function used for read config file, make connections for any DBs and external datasources and store this data into *custom context*.
+  - `Reload()`: reloads application *custom context*. This function called in case if application receive reload signal (e.g. `SIGHUP`) and usually only close an external connections and call `Init()` to read updated config file and create new connections.
+  - `Free()`: frees application *custom context*. This function used for free the *custom context* (e.g. close an external connections) before program termination.
 
-Next you need to setup the *context* and *cancel* functions (due to [context](https://golang.org/pkg/context/) package) for each goroutines to be executed at runtime:
-```go
-// Create main context
-c := context.Background()
+**Routines**
 
-// Create derived context for goroutine
-cRuntime, cf := context.WithCancel(c)
-```
+*Application routines* (or just a *routines*) in `nxs-go-appctx` is a parts of application (i.e. workers) do the specific job such as exec HTTP server, cache daemons and etc. Use `appCtx.RoutineCreate()` call in `main` to create a new *routine*.
 
-Add a new goroutine element into `appctx`. This action creates a `context reload channel` for goroutine. This channel is used to send new application context data to goroutine when program is reloaded:
-```go
-// Add a goroutine element into appctx
-crc := appCtx.RoutineAdd(cf)
-```
+Each *routine* describes in separate package within the `routines/` directory and consist of `Runtime()` called from `main()` and may contain other helper functions if it's necessary. The *routine's* `Runtime()` function must have a handlers to catch data at least from two channels:
+- `context runtime done()`: for notifications from `appctx` to terminate this *routine*.
+- `context reload channel`: for notifications from `appctx` if *custom context* has been reloaded.
 
-To catch the goroutine statuses (when it's done or failed) at main(), you can make the channel, e.g.:
-```go
-// Channel to notify main() when goroutine done
-grChan := make(chan int)
-```
+If the *routine* encountered with a fatal error it may call `appCtx.RoutineDoneSend()` before terminate to notify `appctx` and send appropriate exit status to `main()`.
 
-### Goroutines
+Every *routine* interacts with any other part of application or external data only via *modules*. It also able use *api* and helper functions from *misc*.
 
-After goroutine element is added into `appctx` you can start the new goroutine. Note that all goroutines created using `RoutineAdd()` must call `RoutineDone()` when completed:
-```go
-defer appCtx.RoutineDone(crc)
-runtime(cRuntime, ctx, crc, grChan)
-```
+**Modules**
 
-Within the goroutines you should process at least the following channels:
-- `context done channel`, to receive notification when program terminates
-- `context reload channel`, to receive new application context data
+*Modules* in `nxs-go-appctx` is a blocks responsible for specific logical elements of application.
 
-Also, recommended notify the main() via channel when goroutine completed.
+Each *module* describes in separate package within the `modules/` directory and you may choose for them any structure you want.
 
-Optionally, you can process other channels in accordance with your application algorithm.
+For example, if your app has a `user` table in database with raw dataset such as `id`, `name`, `password` and you need to have complex processing of this data (e.g. find all user whose names match specifed regex), you need to create the *module* `modules/user/` with appropriate code.
 
-Goroutine `runtime` function may look like this:
-```go
-func runtime(cRuntime context.Context, ctx selfContext, crc chan interface{}, grChan chan int) {
+*Module* must interact only with following application elements:
+- Other modules
+- DB
+- Datasources
+- Misc
 
-	timer := time.NewTimer(time.Duration(ctx.timeInterval) * time.Second)
+**API**
 
-	i := 0
+This part of application describes REST API and consist of `RoutesSet()` function and handlers to process all requests and methods you need.
 
-	for {
-		select {
-		case <-timer.C:
-			// Do the some actions
-			log.WithFields(logrus.Fields{
-				"time interval": ctx.timeInterval,
-			}).Info("Time to work!")
-			timer.Reset(time.Duration(ctx.timeInterval) * time.Second)
+*API* must interact only with following application elements:
+- Modules
+- Misc
 
-			if i > 3 {
-				// Goroutine done
-				log.Debug("goroutine done")
-				grChan <- 0
-				return
-			}
-			i++
-		case <-cRuntime.Done():
-			// Program termination.
-			// Write "Done" to log and complete the current goroutine.
-			log.Info("Done")
-			return
-		case c := <-crc:
-			// Updated context application data.
-			// Set the new one in current goroutine.
-			ctx = *(c.(*selfContext))
-		}
-	}
-}
-```
+**DB**
 
-### Program termination
+*DB* describes interaction with databases and has separate packages in `db/` for any database you need to use. The content of packages may has any structure you want.
 
-To correctly terminate the program, the main() function should perform the following steps:
+*DB* must interact only with following application elements:
+- Misc
 
-- Wait for program termination (e.g. by receiving termination signals):
-  ```go
-  // Wait for program termination
-  ec := appCtx.ExitWait()
-  ```
+**Datasource**
 
-- Done the appctx. It will complete write operations at the log file.
-  ```go
-  // Done the appctx
-  appCtx.ContextDone()
-  ```
+*Datasource* is the same of *DB* with the difference *datasource* interacts with any external source of data (exclude databases), such as external APIs, files with data, etc.
 
-- Exit from program using `os.Exit()` call with specified status:
-  ```go
-  // Exit from program with `ec` status
-  os.Exit(ec)
-  ```
+*Datasource* must interact only with following application elements:
+- Misc
 
-If the main() waits and process the derived goroutine statuses, it can initiate program terminate by the following function call:
-```go
-appCtx.ContextTerminate(status)
-```
-After this function is called and exit status is sent, the `appctx` will notified all derived goroutines to terminate, freed application context and return exit status back to main() by the `appCtx.ExitWait()`.
+**Misc**
 
-The complete code of this stage may look similar like this:
-```go
-for {
-  select {
+*Misc* contain helper functions which used by any part of application.
 
-  // Wait for program termination
-  case ec := <-appCtx.ExitWait():
-
-    log.WithFields(logrus.Fields{
-      "exit code": ec,
-    }).Info("program terminating")
-
-    // Done the appctx
-    appCtx.ContextDone()
-
-    // Exit from program with `ec` status
-    os.Exit(ec)
-
-  // Wait for goroutine is done
-  case s := <-grChan:
-
-    log.WithFields(logrus.Fields{
-      "goroutine exit code": s,
-    }).Info("goroutine done")
-    
-    appCtx.ContextTerminate(0)
-  }
-}
-```
+*Misc* must interact only with following application elements:
+- Other miscs
 
 ## Install
 
 ```
-go get github.com/nixys/nxs-go-appctx
+go get github.com/nixys/nxs-go-appctx/v2
 ```
 
 ## Example of usage
 
-The `example` program (see [examples/](https://github.com/nixys/nxs-go-appctx/tree/master/examples) directory):
-
-- Use the following config file:
-  ```yaml
-  time_int: 3
-  logfile: /tmp/example.log
-  loglevel: debug
-  pidfile: /tmp/example.pid
-  ```
-
-- Handle the following termination signals:
-  - SIGTERM
-  - SIGINT
-
-- Handle the following reload signals:
-  - SIGHUP
-
-- Handle the following logrotate signals:
-  - SIGUSR1
-
-After starting the program you will see in the log file similar like this:
-```
-[2019-01-24T05:02:30+07:00] INFO: Time to work! (time interval: 3)
-[2019-01-24T05:02:31+07:00] INFO: Time to work! [2] (time interval: 4)
-[2019-01-24T05:02:33+07:00] INFO: Time to work! (time interval: 3)
-[2019-01-24T05:02:35+07:00] INFO: Time to work! [2] (time interval: 4)
-[2019-01-24T05:02:36+07:00] INFO: Time to work! (time interval: 3)
-[2019-01-24T05:02:39+07:00] INFO: Time to work! [2] (time interval: 4)
-[2019-01-24T05:02:39+07:00] INFO: Time to work! (time interval: 3)
-[2019-01-24T05:02:42+07:00] INFO: Time to work! (time interval: 3)
-[2019-01-24T05:02:42+07:00] DEBUG: goroutine done
-[2019-01-24T05:02:42+07:00] INFO: goroutine done (goroutine exit code: 0)
-[2019-01-24T05:02:42+07:00] INFO: Done [2]
-[2019-01-24T05:02:42+07:00] DEBUG: freeing context
-[2019-01-24T05:02:42+07:00] INFO: program terminating (exit code: 0)
-```
-
-Then you can play with the config file. After the config file change send the `SIGHUP` to the application with the following command:
-```
-kill -HUP `cat /tmp/example.pid`
-```
-and check the log file.
-
-To terminate the program use:
-```
-kill -TERM `cat /tmp/example.pid`
-```
+See [nxs-go-appctx-example-restapi](https://github.com/nixys/nxs-go-appctx-example-restapi).
