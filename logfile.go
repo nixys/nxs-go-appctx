@@ -21,7 +21,7 @@ type logFile struct {
 type logFormatter struct{}
 
 // LogfileInit initializes logging
-func LogfileInit(logfile, loglevel string, logrotateSignals []os.Signal) (*logrus.Logger, error) {
+func LogfileInit(logfile, loglevel string, logrotateSignals []os.Signal, formatter logrus.Formatter) (*logrus.Logger, error) {
 
 	// Validate log level
 	level, err := logrus.ParseLevel(loglevel)
@@ -32,7 +32,7 @@ func LogfileInit(logfile, loglevel string, logrotateSignals []os.Signal) (*logru
 	log := &logrus.Logger{
 		Out:       os.Stdout,
 		Level:     level,
-		Formatter: &logFormatter{},
+		Formatter: logFormat(formatter),
 	}
 
 	// Open log file if necessary
@@ -117,7 +117,7 @@ func logfileOpen(path string, signals []os.Signal) (*logFile, error) {
 		// Wait for signal and reopen log file
 		go func() {
 			signal.Notify(l.sigchan, signals...)
-			for _ = range l.sigchan {
+			for range l.sigchan {
 				if err := l.reopen(); err != nil {
 					fmt.Fprintf(os.Stderr, "%s: error reopening log file: %v\n", time.Now(), err)
 				}
@@ -156,6 +156,13 @@ func (l *logFile) Close() error {
 	close(l.sigchan)
 
 	return l.File.Close()
+}
+
+func logFormat(formatter logrus.Formatter) logrus.Formatter {
+	if formatter == nil {
+		return &logFormatter{}
+	}
+	return formatter
 }
 
 // Set default log format function
