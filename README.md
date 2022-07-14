@@ -53,7 +53,7 @@ If you haven't a specific logic to process described channels you may use `defer
 - `ctx/args.go`: defines a function for processing command line arguments, `Args` struct to store read values and one or more helper functions.
 - `ctx/conf.go`: defines a function for processing config file, structure (may consist with some nested structures) to store read values from config file and one or more helper functions. It's useful to use [nxs-go-conf](https://github.com/nixys/nxs-go-conf) package to work with config files.
 - `ctx/context.go`: defines the *custom context* struct and its three methods:
-  - `Init()`: initiates application *custom context*. This function used for read config file, make connections for any DBs and external datasources and store this data into *custom context*.
+  - `Init()`: initiates application *custom context*. This function used for read config file, make connections for any external datasources and store this data into *custom context*.
   - `Reload()`: reloads application *custom context*. This function called in case if application receive reload signal (e.g. `SIGHUP`) and usually only close an external connections and call `Init()` to read updated config file and create new connections.
   - `Free()`: frees application *custom context*. This function used for free the *custom context* (e.g. close an external connections) before program termination.
 
@@ -79,7 +79,6 @@ For example, if your app has a `user` table in database with raw dataset such as
 
 *Module* must interact only with following application elements:
 - Other modules
-- DB
 - Datasources
 - Misc
 
@@ -91,18 +90,11 @@ This part of application describes REST API and consist of `RoutesSet()` functio
 - Modules
 - Misc
 
-**DB**
+**Datasources**
 
-*DB* describes interaction with databases and has separate packages in `db/` for any database you need to use. The content of packages may has any structure you want.
+*Datasources* contains a separate packages in `ds/` describes interaction with any external datasources you need to use such as DBs (eg. Redis, MongoDB, PostgreSQL, MySQL, etc), APIs (e.g. GitHub API, Kubernetes API, etc). The content of packages may has any structure you want.
 
-*DB* must interact only with following application elements:
-- Misc
-
-**Datasource**
-
-*Datasource* is the same of *DB* with the difference *datasource* interacts with any external source of data (exclude databases), such as external APIs, files with data, etc.
-
-*Datasource* must interact only with following application elements:
+*Datasources* must interact only with following application elements:
 - Misc
 
 **Misc**
