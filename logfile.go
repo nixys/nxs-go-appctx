@@ -2,6 +2,7 @@ package appctx
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -29,21 +30,33 @@ func LogfileInit(logfile, loglevel string, logrotateSignals []os.Signal, formatt
 		return nil, fmt.Errorf("wrong loglevel value: %s", loglevel)
 	}
 
+	switch logfile {
+	case "", "stdout":
+		return &logrus.Logger{
+			Out:       os.Stdout,
+			Level:     level,
+			Formatter: logFormat(formatter),
+		}, nil
+	case "stderr":
+		return &logrus.Logger{
+			Out:       os.Stderr,
+			Level:     level,
+			Formatter: logFormat(formatter),
+		}, nil
+	}
+
 	log := &logrus.Logger{
-		Out:       os.Stdout,
 		Level:     level,
 		Formatter: logFormat(formatter),
 	}
 
-	// Open log file if necessary
-	if logfile != "" && logfile != "stdout" {
-		l, err := logfileOpen(logfile, logrotateSignals)
-		if err != nil {
-			return log, fmt.Errorf("can't open log file: %v", err)
-		}
-
-		log.SetOutput(l)
+	// Open log file
+	l, err := logfileOpen(logfile, logrotateSignals)
+	if err != nil {
+		return log, fmt.Errorf("can't open log file: %v", err)
 	}
+
+	log.SetOutput(l)
 
 	return log, nil
 }
@@ -52,7 +65,7 @@ func LogfileInit(logfile, loglevel string, logrotateSignals []os.Signal, formatt
 // It opens new log file, sets new log level and log rotation signals
 func LogfileChange(log *logrus.Logger, logfileNew, loglevelNew string, logrotateSignalsNew []os.Signal) error {
 
-	var l *logFile
+	var l io.Writer
 
 	// Validate log level
 	level, err := logrus.ParseLevel(loglevelNew)
@@ -60,8 +73,12 @@ func LogfileChange(log *logrus.Logger, logfileNew, loglevelNew string, logrotate
 		return fmt.Errorf("wrong loglevel value: %s", loglevelNew)
 	}
 
-	// Open new log file if necessary
-	if logfileNew != "" && logfileNew != "stdout" {
+	switch logfileNew {
+	case "", "stdout":
+		l = os.Stdout
+	case "stderr":
+		l = os.Stderr
+	default:
 		l, err = logfileOpen(logfileNew, logrotateSignalsNew)
 		if err != nil {
 			return fmt.Errorf("can't open log file: %v", err)
@@ -73,11 +90,7 @@ func LogfileChange(log *logrus.Logger, logfileNew, loglevelNew string, logrotate
 
 	// Apply new logging settings
 	log.SetLevel(level)
-	if l == nil {
-		log.SetOutput(os.Stdout)
-	} else {
-		log.SetOutput(l)
-	}
+	log.SetOutput(l)
 
 	// Close old log file
 	if isLogFile {
