@@ -1,14 +1,14 @@
 # nxs-go-appctx
 
-This Go package provides a tools to make Go applications context. With the `nxs-go-appctx` you may focus on your application logic instead of write an extensive and difficult system kits to allow your daemons work fine. `Nxs-go-appctx` designed to simplify create REST API applications.
+This Go package provides a tools to make Go applications context. With the `nxs-go-appctx` you may focus on your application logic instead of write an extensive and difficult system kits to allow your daemons work fine. `nxs-go-appctx` designed to simplify create REST API applications.
 
 ## Features
 
 - **Application context control**  
-Most applications consist of goroutines that implements program functionality and context that contains a data (e.g. config option, database connections, etc) used at runtime. `Nxs-go-appctx` allows to control of the derived goroutines and keep context data up-to-dated over an application runtime.
+Most applications consist of goroutines that implements program functionality and context that contains a data (e.g. config option, database connections, etc) used at runtime. `nxs-go-appctx` allows to control of the derived goroutines and keep context data up-to-dated over an application runtime.
 
 - **Logging**  
-`Nxs-go-appctx` uses the [logrus](https://github.com/sirupsen/logrus) logger created at the *init* stage and it's available in application at runtime. In accordance with context settings, log file can be changed after context reload. Also you may choose log format you wish.
+`nxs-go-appctx` uses the [logrus](https://github.com/sirupsen/logrus) logger created at the *init* stage and it's available in application at runtime. In accordance with context settings, log file can be changed after context reload. Also you may choose log format you wish.
 
 - **Pid files**  
 If the *pid file* path is set, the pid file with the program PID will be automatically created at the *init* and removed at the *terminate* stage. In accordance with context settings, pid file can be changed after context reload.
@@ -30,7 +30,7 @@ For better understanding the `nxs-go-appctx` see the example in [nxs-go-appctx-e
 
 Application that uses the `nxs-go-appctx` generally has structure described below.
 
-![Nixys Application Context structure](docs/images/nxs-go-appctx.png)
+![nxs-go-appctx structure](docs/images/nxs-go-appctx.png)
 
 **Main**
 
@@ -113,3 +113,13 @@ go get github.com/nixys/nxs-go-appctx/v2
 ## Example of usage
 
 See [nxs-go-appctx-example-restapi](https://github.com/nixys/nxs-go-appctx-example-restapi).
+
+## Feedback
+
+For support and feedbaсk please contact me:
+- telegram: [@borisershov](https://t.me/borisershov)
+- e-mail: b.ershov@nixys.ru
+
+## License
+
+nxs-go-appctx is released under the [MIT License](LICENSE).
