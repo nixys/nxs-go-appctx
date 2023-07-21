@@ -116,7 +116,7 @@ See [nxs-go-appctx-example-restapi](https://github.com/nixys/nxs-go-appctx-examp
 
 ## Feedback
 
-For support and feedbaсk please contact me:
+For support and feedback please contact me:
 - telegram: [@borisershov](https://t.me/borisershov)
 - e-mail: b.ershov@nixys.ru
 
